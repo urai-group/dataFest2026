@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Multivariate Time Series & Dendrogram Dashboard</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+
+        :root {
+            --bg: #f5f4f0;
+            --surface: #ffffff;
+            --surface2: #f0eeea;
+            --border: #d4cfc6;
+            --text: #1a1a2e;
+            --text-dim: #7a7a8c;
+            --accent: #1a56db;
+            --accent2: #e53e3e;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'IBM Plex Sans', sans-serif; background: var(--bg); color: var(--text); padding: 24px; font-size: 12px; min-height: 100vh; }
+
+        .page-header { margin-bottom: 32px; border-bottom: 2px solid var(--border); padding-bottom: 20px; display: flex; align-items: flex-start; justify-content: space-between; }
+        .page-header-text h1 { font-family: 'IBM Plex Mono', monospace; font-size: 18px; font-weight: 600; color: var(--accent); letter-spacing: 0.04em; text-transform: uppercase; }
+        .page-header-text p  { font-size: 11px; color: var(--text-dim); margin-top: 4px; font-family: 'IBM Plex Mono', monospace; }
+
+        .section { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+        .section-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+        .section-number { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--accent); background: rgba(26,86,219,0.08); border: 1px solid rgba(26,86,219,0.25); padding: 2px 8px; border-radius: 2px; }
+        h2 { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: 0.02em; }
+        h3 { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 400; color: var(--text-dim); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+        .phase-group { display: inline-block; margin-right: 12px; vertical-align: top; }
+
+        .axis text { font-size: 9px; fill: var(--text-dim); font-family: 'IBM Plex Mono', monospace; }
+        .axis path, .axis line { stroke: var(--border); }
+
+        /* ── Line styles per type ── */
+        .line { fill: none; stroke-width: 1.8px; opacity: 0.75; }
+        .line:hover { stroke-width: 2.8px; opacity: 1; cursor: pointer; }
+        .line-Search { stroke-dasharray: none; }
+        .line-View   { stroke-dasharray: 6,3; }
+        .line-Edit   { stroke-dasharray: 2,2; }
+        .line-diff   { stroke-dasharray: none; }
+
+        .tooltip { position: absolute; background: var(--surface); border: 1px solid var(--border); padding: 10px 14px; border-radius: 3px; pointer-events: none; font-size: 11px; opacity: 0; box-shadow: 0 8px 24px rgba(0,0,0,0.15); z-index: 100; line-height: 1.6; font-family: 'IBM Plex Mono', monospace; color: var(--text); max-width: 260px; }
+        .tooltip strong { color: var(--accent); }
+        .tooltip em { color: var(--text-dim); font-style: normal; }
+
+        .event-line   { stroke: var(--accent2); stroke-width: 1px; stroke-dasharray: 3,3; opacity: 0.45; }
+        .event-hotspot { stroke: transparent; stroke-width: 12px; cursor: pointer; }
+
+        .dendro-link { fill: none; stroke: var(--border); stroke-width: 1.5px; transition: stroke 0.2s, stroke-width 0.2s; }
+        .cell { transition: opacity 0.2s; }
+
+        #overview-charts { margin-top: 8px; }
+        .overview-row { margin-bottom: 20px; }
+        .overview-row h3 { margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+        .country-flag { font-size: 22px; line-height: 1; }
+
+        .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 16px; padding: 10px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: 3px; align-items: center; }
+        .legend-item { display: flex; align-items: center; gap: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--text-dim); }
+        .legend-swatch-line { width: 28px; height: 10px; display: flex; align-items: center; }
+        .legend-swatch-line svg { overflow: visible; }
+
+        .phase-label { font-family: 'IBM Plex Mono', monospace; font-size: 8px; fill: var(--text-dim); }
+        .phase-shade { opacity: 0.07; fill: var(--accent); }
+
+        #req4-charts { display: flex; flex-direction: column; }
+        .metric-analysis-block { margin-bottom: 48px; }
+        .metric-row { display: flex; align-items: flex-start; gap: 24px; }
+
+        .dendro-panel { background: var(--surface2); border: 1px solid var(--border); border-radius: 3px; padding: 16px; min-width: 280px; max-width: 320px; flex-shrink: 0; }
+        .dendro-panel-header { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+        .dendro-panel-empty { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--text-dim); text-align: center; padding: 40px 0; line-height: 1.8; }
+
+        .phase-section-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; padding: 7px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 3px; align-items: center; }
+        .cross-dot { pointer-events: none; }
+
+        /* ── Phase handles ── */
+        .phase-handle { cursor: ew-resize; stroke: var(--accent); stroke-width: 2px; opacity: 0.5; }
+        .phase-handle:hover { opacity: 1; stroke-width: 3px; }
+        .handle-grip { fill: var(--accent); opacity: 0.55; pointer-events: none; }
+
+        /* ── Update bar ── */
+        #update-bar { display: none; align-items: center; gap: 14px; padding: 10px 18px; background: rgba(26,86,219,0.06); border: 1px solid rgba(26,86,219,0.3); border-radius: 3px; margin-bottom: 16px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--text-dim); }
+        #update-bar.visible { display: flex; }
+        #update-bar span { flex: 1; }
+        #btn-update { background: var(--accent); color: white; border: none; border-radius: 3px; padding: 6px 18px; cursor: pointer; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; transition: background 0.15s; }
+        #btn-update:hover { background: #1344b0; }
+        #btn-reset { background: transparent; color: var(--text-dim); border: 1px solid var(--border); border-radius: 3px; padding: 6px 14px; cursor: pointer; font-family: 'IBM Plex Mono', monospace; font-size: 11px; transition: border-color 0.15s, color 0.15s; }
+        #btn-reset:hover { border-color: var(--accent2); color: var(--accent2); }
+
+        /* ── Algo toggle ── */
+        .algo-toggle { display: flex; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; margin-bottom: 14px; width: fit-content; }
+        .algo-btn { padding: 7px 22px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; background: var(--surface2); color: var(--text-dim); border: none; border-right: 1px solid var(--border); cursor: pointer; transition: background 0.15s, color 0.15s; }
+        .algo-btn:last-child { border-right: none; }
+        .algo-btn.active { background: var(--accent); color: white; }
+        .algo-desc { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--text-dim); margin-bottom: 18px; line-height: 1.7; padding: 8px 14px; background: var(--surface2); border-left: 2px solid var(--accent); border-radius: 0 3px 3px 0; max-width: 680px; }
+        .algo-desc strong { color: var(--text); }
+
+        /* ── Animate button ── */
+        .header-controls { display: flex; gap: 10px; align-items: center; }
+        #btn-animate { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 3px; padding: 8px 18px; cursor: pointer; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; transition: all 0.15s; display: flex; align-items: center; gap: 8px; }
+        #btn-animate:hover { background: var(--accent); color: white; border-color: var(--accent); }
+        #btn-animate.blanked { background: var(--accent); color: white; border-color: var(--accent); }
+        #btn-animate .icon { font-size: 14px; }
+        #animate-hint { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--accent); margin-bottom: 12px; padding: 6px 12px; background: rgba(26,86,219,0.06); border: 1px dashed rgba(26,86,219,0.3); border-radius: 3px; display: none; }
+        #animate-hint.visible { display: block; }
+
+        /* ── Animated path trick ── */
+        .animatable { }
+    </style>
+</head>
+<body>
+
+<div class="page-header">
+    <div class="page-header-text">
+        <h1>Wikipedia & Google Trends — Longitudinal Analysis</h1>
+        <p>Search · View · Edit signals across language editions — 2025</p>
+    </div>
+    <div class="header-controls">
+        <button id="btn-animate"><span class="icon">▶</span> Animate Charts</button>
+    </div>
+</div>
+
+<div id="tooltip" class="tooltip"></div>
+<div id="animate-hint">Press <strong>Enter ↵</strong> to reveal next chart</div>
+
+<div id="update-bar">
+    <span>⬡ Phase boundaries changed — downstream charts are stale</span>
+    <button id="btn-reset">Reset phases</button>
+    <button id="btn-update">Update all charts ↓</button>
+</div>
+
+<div class="section">
+    <div class="section-header"><span class="section-number">00</span><h2>Full-Year Overview — 2025</h2></div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-dim);margin-bottom:12px;">
+        Drag the <span style="color:var(--accent);font-weight:600;">blue vertical handles</span> to adjust phase boundaries, then press <strong style="color:var(--accent);">Update all charts</strong>.
+    </div>
+    <div id="overview-legend" class="legend"></div>
+    <div id="overview-charts"></div>
+</div>
+
+<div class="section">
+    <div class="section-header"><span class="section-number">01–02</span><h2>Language-Specific Trends (Search, View, Edit)</h2></div>
+    <div id="req12-charts"></div>
+</div>
+
+<div class="section">
+    <div class="section-header"><span class="section-number">03</span><h2>Category-Specific Trends — Cross-Language, Normalized</h2></div>
+    <div id="req3-charts"></div>
+</div>
+
+<div class="section">
+    <div class="section-header"><span class="section-number">04</span><h2>Differential Behaviour — Search vs View / Edit / Global</h2></div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-dim);margin-bottom:16px;">
+        Each line = (country Search) − (country View or Edit), or (country Search) − (Worldwide Search). Positive = Search outpaces the other signal; negative = the other signal outpaces Search.
+    </div>
+    <div id="req5-charts"></div>
+</div>
+
+<div class="section">
+    <div class="section-header"><span class="section-number">05</span><h2>Similarity Heatmap &amp; Dendrogram</h2></div>
+    <div class="algo-toggle" id="algo-toggle">
+        <button class="algo-btn active" data-algo="pearson">Pearson Correlation</button>
+        <button class="algo-btn"        data-algo="dtw">Dynamic Time Warping</button>
+    </div>
+    <div class="algo-desc" id="algo-desc">
+        <strong>Pearson r</strong>: linear correlation aligned point-by-point. Distance = 1 − r (identical → 0, inverse → 2).
+    </div>
+    <div id="req4-charts"></div>
+</div>
+
+<script>
+// ── tooltip ──────────────────────────────────────────────────────────────
+const tooltip = d3.select("#tooltip");
+const showTooltip = (html, e) => tooltip.style("opacity",1).html(html)
+    .style("left",(e.pageX+15)+"px").style("top",(e.pageY-15)+"px");
+const hideTooltip = () => tooltip.style("opacity",0);
+
+// ── country flags ─────────────────────────────────────────────────────────
+const countryFlags = {
+    Sweden: "🇸🇪", Italy: "🇮🇹", Poland: "🇵🇱",
+    Russia: "🇷🇺", Worldwide: "🌐"
+};
+
+// ── line style per type ───────────────────────────────────────────────────
+const lineStyles = {
+    Search: { dasharray: null,   label: "Search" },
+    View:   { dasharray: "6,3",  label: "View"   },
+    Edit:   { dasharray: "2,2",  label: "Edit"   }
+};
+function applyLineStyle(sel, type) {
+    const s = lineStyles[type];
+    if (s && s.dasharray) sel.attr("stroke-dasharray", s.dasharray);
+    else sel.attr("stroke-dasharray", null);
+}
+
+// Legend swatch with correct dash pattern
+function legendSwatchSVG(color, type) {
+    const s = lineStyles[type] || {};
+    const dash = s.dasharray ? `stroke-dasharray="${s.dasharray}"` : "";
+    return `<svg width="28" height="10" style="overflow:visible"><line x1="0" y1="5" x2="28" y2="5" stroke="${color}" stroke-width="2" ${dash}/></svg>`;
+}
+
+// ── animation state ───────────────────────────────────────────────────────
+let animMode = false;
+let animQueue = [];   // array of {path, length} to replay on Enter
+let animIdx = 0;
+let allAnimPaths = []; // {el: DOM path, length, origD} collected during build
+
+const btnAnimate = document.getElementById("btn-animate");
+const animHint   = document.getElementById("animate-hint");
+
+btnAnimate.addEventListener("click", () => {
+    animMode = !animMode;
+    if (animMode) {
+        btnAnimate.innerHTML = '<span class="icon">⏸</span> Reset Animate';
+        btnAnimate.classList.add("blanked");
+        animHint.classList.add("visible");
+        blankAllLines();
+        animIdx = 0;
+    } else {
+        btnAnimate.innerHTML = '<span class="icon">▶</span> Animate Charts';
+        btnAnimate.classList.remove("blanked");
+        animHint.classList.remove("visible");
+        restoreAllLines();
+    }
+});
+
+document.addEventListener("keydown", e => {
+    if (e.key === "Enter" && animMode) {
+        if (animIdx < allAnimPaths.length) {
+            const item = allAnimPaths[animIdx];
+            animIdx++;
+            animatePath(item.el, item.length);
+        }
+    }
+});
+
+function blankAllLines() {
+    allAnimPaths.forEach(item => {
+        const el = item.el;
+        el.style.strokeDasharray = item.length + " " + item.length;
+        el.style.strokeDashoffset = item.length;
+        el.style.transition = "none";
+    });
+}
+
+function restoreAllLines() {
+    allAnimPaths.forEach(item => {
+        const el = item.el;
+        el.style.strokeDasharray = "";
+        el.style.strokeDashoffset = "";
+        el.style.transition = "";
+        // restore original dash pattern
+        if (item.origDash) el.setAttribute("stroke-dasharray", item.origDash);
+        else el.removeAttribute("stroke-dasharray");
+    });
+}
+
+function animatePath(el, length) {
+    el.style.transition = "none";
+    el.style.strokeDasharray = length + " " + length;
+    el.style.strokeDashoffset = length;
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            el.style.transition = "stroke-dashoffset 1.2s cubic-bezier(0.4,0,0.2,1)";
+            el.style.strokeDashoffset = "0";
+        });
+    });
+}
+
+function registerAnimPath(pathEl, origDash) {
+    // compute length after a small delay to ensure it's in DOM
+    setTimeout(() => {
+        try {
+            const length = pathEl.getTotalLength ? pathEl.getTotalLength() : 0;
+            if (length > 0) {
+                allAnimPaths.push({ el: pathEl, length, origDash: origDash || null });
+                if (animMode) {
+                    pathEl.style.strokeDasharray = length + " " + length;
+                    pathEl.style.strokeDashoffset = length;
+                }
+            }
+        } catch(e) {}
+    }, 50);
+}
+
+// ── phase state ───────────────────────────────────────────────────────────
+const mkPhases = () => [
+    { name:"P1: Israeli Airstrikes → Ceasefire",         shortName:"P1", start:new Date(2025,0,1),  end:new Date(2025,0,31)  },
+    { name:"P2: Twelve Day War / US-Brokered Ceasefire", shortName:"P2", start:new Date(2025,5,1),  end:new Date(2025,5,30)  },
+    { name:"P3: Netanyahu Speech & Ceasefire",           shortName:"P3", start:new Date(2025,8,1),  end:new Date(2025,9,31)  }
+];
+let phases         = mkPhases();
+let renderedPhases = mkPhases();
+
+// ── algo state ────────────────────────────────────────────────────────────
+let currentAlgo = "pearson";
+
+// ── constants ─────────────────────────────────────────────────────────────
+const yearStart = new Date(2025,0,1);
+const yearEnd   = new Date(2025,11,31);
+const MIN_PHASE_MS = 7*24*3600*1000;
+
+const baseFolder = "final_data/google_trends/";
+const trendFiles = [
+    { name:"Sweden",    path:baseFolder+"sweden.csv"    },
+    { name:"Italy",     path:baseFolder+"italy.csv"     },
+    { name:"Poland",    path:baseFolder+"poland.csv"    },
+    { name:"Russia",    path:baseFolder+"russia.csv"    },
+    { name:"Worldwide", path:baseFolder+"worldwide.csv" }
+];
+
+const promises = [d3.csv("events.csv"), d3.csv("wikipedia_views.csv"), d3.csv("wikipedia_edits.csv")];
+trendFiles.forEach(f => promises.push(d3.csv(f.path)));
+
+Promise.all(promises).then(datasets => {
+    const eventsRaw       = datasets[0];
+    const viewsRaw        = datasets[1];
+    const editsRaw        = datasets[2];
+    const googleTrendsRaw = datasets.slice(3);
+
+    const events = eventsRaw.map(d => ({ date:new Date(d.Date), desc:d.Event||d.Description||d.Name }));
+    const parseVal = v => (typeof v==="string" && v.includes("<1")) ? 0 : +v;
+
+    const allData = [];
+    const addWiki = (data, type) =>
+        data.forEach(d => allData.push({ date:new Date(d.Date), country:d.Country, val:+d.Interest, type }));
+    addWiki(viewsRaw,"View");
+    addWiki(editsRaw,"Edit");
+    googleTrendsRaw.forEach((data,i) => {
+        const cn = trendFiles[i].name;
+        data.forEach(row => {
+            const cr={};
+            for (let k in row) cr[k.trim()]=row[k];
+            const dk = cr.hasOwnProperty("Time")?"Time":"Date";
+            const vk = Object.keys(cr).find(k=>k!==dk&&k!=="Country");
+            allData.push({ date:new Date(cr[dk]), country:cn, val:parseVal(cr[vk]), type:"Search" });
+        });
+    });
+
+    const countries    = trendFiles.map(d=>d.name);
+    const types        = ["Search","View","Edit"];
+    const typeColors   = { Search:"#1a7f5a", View:"#1a56db", Edit:"#6d28d9" };
+    const countryColors = d3.scaleOrdinal().domain(countries)
+        .range(["#1a56db","#b45309","#1a7f5a","#e53e3e","#6d28d9"]);
+
+    const normalize = data => {
+        const mn=d3.min(data,d=>d.val), mx=d3.max(data,d=>d.val);
+        return data.map(d => ({ ...d, normVal: mx>mn ? (d.val-mn)/(mx-mn) : 0 }));
+    };
+
+    const buildPhasedData = () => {
+        const pd = [];
+        renderedPhases.forEach((p,pIdx) => {
+            countries.forEach(c => types.forEach(t => {
+                const sub = allData.filter(d=>d.country===c&&d.type===t&&d.date>=p.start&&d.date<=p.end);
+                if (sub.length) pd.push(...normalize(sub).map(d=>({...d,phaseIdx:pIdx})));
+            }));
+        });
+        return pd;
+    };
+    let phasedData = buildPhasedData();
+
+    // ── cross-highlight ───────────────────────────────────────────────────
+    const subplotRegistry = new Map();
+    const registerSubplot = (key,svgG,xScale,yScale,phaseIdx,groupKey,data) =>
+        subplotRegistry.set(key,{svgG,xScale,yScale,phaseIdx,groupKey,data});
+    const clearCrossDots = () => d3.selectAll(".cross-dot").remove();
+    const crossHighlightDate = (targetDate, sourceKey, sourcePhase) => {
+        clearCrossDots();
+        subplotRegistry.forEach((e,key) => {
+            if (key===sourceKey || e.phaseIdx!==sourcePhase) return;
+            d3.group(e.data,d=>d[e.groupKey]).forEach((pts,grpVal) => {
+                const cl = pts.reduce((b,d)=>Math.abs(d.date-targetDate)<Math.abs(b.date-targetDate)?d:b,pts[0]);
+                const x=e.xScale(cl.date), y=e.yScale(cl.normVal);
+                if (isNaN(x)||isNaN(y)) return;
+                const color = e.groupKey==="type" ? typeColors[grpVal] : countryColors(grpVal);
+                e.svgG.append("circle").attr("class","cross-dot")
+                    .attr("cx",x).attr("cy",y).attr("r",3.5)
+                    .attr("fill",color).attr("stroke","white").attr("stroke-width",1.5).attr("opacity",0.9);
+            });
+        });
+    };
+
+    // ── update-bar ────────────────────────────────────────────────────────
+    const markDirty = () => d3.select("#update-bar").classed("visible",true);
+    d3.select("#btn-update").on("click",() => {
+        phases.forEach(p => { if (p.start>p.end) { const t=p.start;p.start=p.end;p.end=t; } });
+        renderedPhases = phases.map(p=>({...p}));
+        phasedData = buildPhasedData();
+        d3.select("#update-bar").classed("visible",false);
+        rebuildDownstream();
+    });
+    d3.select("#btn-reset").on("click",() => {
+        phases = mkPhases(); renderedPhases = mkPhases();
+        phasedData = buildPhasedData();
+        d3.select("#update-bar").classed("visible",false);
+        rebuildAll();
+    });
+
+    // ── algo toggle ───────────────────────────────────────────────────────
+    const algoDescs = {
+        pearson: "<strong>Pearson r</strong>: linear correlation aligned point-by-point. Distance = 1 − r (identical → 0, inverse → 2).",
+        dtw:     "<strong>Dynamic Time Warping</strong>: finds the optimal elastic alignment between two series, robust to phase-shifts and tempo differences. Distance is normalized by warping path length."
+    };
+    d3.selectAll(".algo-btn").on("click",function(){
+        const algo = this.dataset.algo;
+        if (algo===currentAlgo) return;
+        currentAlgo = algo;
+        d3.selectAll(".algo-btn").classed("active",false);
+        d3.select(this).classed("active",true);
+        d3.select("#algo-desc").html(algoDescs[algo]);
+        buildSection04();
+    });
+
+    // ── algorithms ────────────────────────────────────────────────────────
+    const pearson = (a,b) => {
+        const mA=d3.mean(a),mB=d3.mean(b);
+        let num=0,dA=0,dB=0;
+        for (let i=0;i<a.length;i++){
+            num+=(a[i]-mA)*(b[i]-mB);
+            dA+=Math.pow(a[i]-mA,2);
+            dB+=Math.pow(b[i]-mB,2);
+        }
+        return (dA===0||dB===0)?0:num/(Math.sqrt(dA)*Math.sqrt(dB));
+    };
+
+    const dtw = (a,b) => {
+        const n=a.length,m=b.length;
+        if (n===0||m===0) return 0;
+        const dp=new Float64Array(n*m).fill(Infinity);
+        dp[0]=Math.abs(a[0]-b[0]);
+        for (let i=1;i<n;i++) dp[i*m]=dp[(i-1)*m]+Math.abs(a[i]-b[0]);
+        for (let j=1;j<m;j++) dp[j]=dp[j-1]+Math.abs(a[0]-b[j]);
+        for (let i=1;i<n;i++)
+            for (let j=1;j<m;j++){
+                const cost=Math.abs(a[i]-b[j]);
+                dp[i*m+j]=cost+Math.min(dp[(i-1)*m+j],dp[i*m+(j-1)],dp[(i-1)*m+(j-1)]);
+            }
+        return dp[n*m-1]/Math.max(n,m);
+    };
+
+    const computeDistMatrix = (vectors,activeCountries) => {
+        const mat={};
+        activeCountries.forEach(c1=>{
+            mat[c1]={};
+            activeCountries.forEach(c2=>{
+                if (currentAlgo==="pearson"){
+                    const r=pearson(vectors[c1],vectors[c2]);
+                    mat[c1][c2]=1-(isNaN(r)?0:r);
+                } else {
+                    mat[c1][c2]=dtw(vectors[c1],vectors[c2]);
+                }
+            });
+        });
+        return mat;
+    };
+
+    // ── UPGMA ─────────────────────────────────────────────────────────────
+    const UPGMA = (ids, dist, prefix) => {
+        let cl = ids.map(id=>({id,leaves:[id],height:0}));
+        while (cl.length>1){
+            let minD=Infinity,pair=[0,1];
+            for (let i=0;i<cl.length;i++) for (let j=i+1;j<cl.length;j++){
+                let s=0,c=0;
+                cl[i].leaves.forEach(l1=>cl[j].leaves.forEach(l2=>{s+=dist[l1][l2];c++;}));
+                const avg=s/c; if (avg<minD){minD=avg;pair=[i,j];}
+            }
+            const [i,j]=pair;
+            cl.push({id:prefix+"_"+cl[i].id+"_"+cl[j].id,
+                children:[cl[i],cl[j]],
+                leaves:[...cl[i].leaves,...cl[j].leaves],
+                height:minD/2});
+            cl.splice(j,1); cl.splice(i,1);
+        }
+        return cl[0];
+    };
+
+    // ================================================================
+    //  SECTION 0 — Full-Year Overview  (with drag handles)
+    // ================================================================
+    let shadeRedrawers = [];
+
+    const buildOverviewCharts = () => {
+        shadeRedrawers = [];
+        allAnimPaths = []; // reset anim registry on rebuild
+        const overviewDiv = d3.select("#overview-charts");
+        overviewDiv.html("");
+
+        // Legend
+        const legendDiv = d3.select("#overview-legend");
+        legendDiv.html("");
+        types.forEach(t => {
+            legendDiv.append("div").attr("class","legend-item")
+                .html(`<div class="legend-swatch-line">${legendSwatchSVG(typeColors[t], t)}</div><span>${t}</span>`);
+        });
+        legendDiv.append("div").style("width","1px").style("background","var(--border)").style("height","16px").style("margin","0 4px");
+        countries.forEach(c => {
+            legendDiv.append("div").attr("class","legend-item")
+                .html(`<span class="country-flag">${countryFlags[c]||""}</span><div style="width:16px;height:2px;background:${countryColors(c)};border-radius:1px;display:inline-block;margin:0 4px;vertical-align:middle;"></div><span>${c}</span>`);
+        });
+
+        const margin={top:46,right:20,bottom:35,left:44};
+        const W=1100-margin.left-margin.right;
+        const H=200-margin.top-margin.bottom;
+        const xScale = d3.scaleTime().domain([yearStart,yearEnd]).range([0,W]);
+
+        countries.forEach(c => {
+            const row = overviewDiv.append("div").attr("class","overview-row");
+            // Country header with flag
+            const h3 = row.append("h3");
+            h3.append("span").attr("class","country-flag").text(countryFlags[c]||"");
+            h3.append("span").text(" " + c);
+
+            const svgEl = row.append("svg")
+                .attr("width",  W+margin.left+margin.right)
+                .attr("height", H+margin.top+margin.bottom);
+            const g = svgEl.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+            const yScale = d3.scaleLinear().domain([0,1]).range([H,0]);
+            const shadeG = g.append("g").attr("class","shade-group");
+            const handleG = g.append("g").attr("class","handle-group");
+
+            const drawShades = () => {
+                shadeG.selectAll("*").remove();
+                phases.forEach(p => {
+                    const x0=xScale(p.start), x1=xScale(p.end), mid=(x0+x1)/2;
+                    shadeG.append("rect").attr("class","phase-shade")
+                        .attr("x",x0).attr("y",0).attr("width",Math.max(0,x1-x0)).attr("height",H);
+                    shadeG.append("text").attr("class","phase-label")
+                        .attr("x",mid).attr("y",-28).attr("text-anchor","middle")
+                        .style("font-weight","600").style("fill","var(--accent)").text(p.shortName+":");
+                    const words=p.name.replace(/^P\d+: /,"").split(" ");
+                    const half=Math.ceil(words.length/2);
+                    shadeG.append("text").attr("class","phase-label").attr("x",mid).attr("y",-17).attr("text-anchor","middle").text(words.slice(0,half).join(" "));
+                    shadeG.append("text").attr("class","phase-label").attr("x",mid).attr("y",-7).attr("text-anchor","middle").text(words.slice(half).join(" "));
+                });
+            };
+            shadeRedrawers.push(drawShades);
+            drawShades();
+
+            g.append("g").attr("class","axis").attr("transform",`translate(0,${H})`)
+                .call(d3.axisBottom(xScale).ticks(d3.timeMonth.every(1)).tickFormat(d3.timeFormat("%b")))
+                .call(gg=>gg.select(".domain").remove());
+            g.append("g").attr("class","axis")
+                .call(d3.axisLeft(yScale).ticks(3).tickFormat(d=>d===0?"0":d===1?"1":""))
+                .call(gg=>gg.select(".domain").remove());
+
+            events.filter(e=>e.date>=yearStart&&e.date<=yearEnd).forEach(e=>{
+                const x=xScale(e.date);
+                g.append("line").attr("class","event-line").attr("x1",x).attr("x2",x).attr("y1",0).attr("y2",H);
+                g.append("circle").attr("cx",x).attr("cy",H).attr("r",2.5)
+                    .style("fill","var(--accent2)").style("opacity",0.55).style("pointer-events","none");
+                g.append("line").attr("class","event-hotspot").attr("x1",x).attr("x2",x).attr("y1",0).attr("y2",H)
+                    .on("mouseover",ev=>showTooltip(`<strong>Event</strong><br/>${e.desc}<br/><em>${e.date.toDateString()}</em>`,ev))
+                    .on("mouseout",hideTooltip);
+            });
+
+            const lineGen = d3.line().defined(d=>!isNaN(d.normVal))
+                .x(d=>xScale(d.date)).y(d=>yScale(d.normVal)).curve(d3.curveMonotoneX);
+            types.forEach(t=>{
+                const sub=allData.filter(d=>d.country===c&&d.type===t&&d.date>=yearStart&&d.date<=yearEnd);
+                const nr=normalize(sub);
+                if (!nr.length) return;
+                const path = g.append("path").datum(nr).attr("class","line line-"+t)
+                    .attr("stroke",typeColors[t]).attr("d",lineGen);
+                applyLineStyle(path, t);
+                const pathNode = path.node();
+                const origDash = lineStyles[t]?.dasharray || null;
+                registerAnimPath(pathNode, origDash);
+                path
+                    .on("mousemove",function(event){
+                        const [mx]=d3.pointer(event);
+                        const hd=xScale.invert(mx);
+                        const cl=nr.reduce((b,d)=>Math.abs(d.date-hd)<Math.abs(b.date-hd)?d:b,nr[0]);
+                        showTooltip(`<strong>${c} — ${t}</strong><br/>${d3.timeFormat("%b %d")(cl.date)}<br/>Normalized: ${cl.normVal.toFixed(2)}`,event);
+                    })
+                    .on("mouseleave",hideTooltip);
+            });
+
+            const drawHandles = () => {
+                handleG.selectAll("*").remove();
+                phases.forEach((p,pi)=>{
+                    ["start","end"].forEach(side=>{
+                        const px = xScale(p[side]);
+                        const hline = handleG.append("line").attr("class","phase-handle")
+                            .attr("x1",px).attr("x2",px).attr("y1",-6).attr("y2",H+4);
+                        handleG.append("polygon").attr("class","handle-grip")
+                            .attr("points",`${px-5},-8 ${px+5},-8 ${px},0`);
+                        hline.call(d3.drag().on("drag",function(event){
+                            let nd = new Date(Math.max(yearStart.getTime(), Math.min(yearEnd.getTime(), xScale.invert(event.x).getTime())));
+                            if (side==="start") nd = new Date(Math.min(nd.getTime(), phases[pi].end.getTime()-MIN_PHASE_MS));
+                            else               nd = new Date(Math.max(nd.getTime(), phases[pi].start.getTime()+MIN_PHASE_MS));
+                            phases[pi][side] = nd;
+                            shadeRedrawers.forEach(fn=>fn());
+                            d3.selectAll(".handle-group").each(function(){ drawHandlesOnG(d3.select(this), xScale, H); });
+                            markDirty();
+                        }));
+                    });
+                });
+            };
+            drawHandles();
+        });
+    };
+
+    const drawHandlesOnG = (handleG, xScale, H) => {
+        handleG.selectAll("*").remove();
+        phases.forEach((p,pi)=>{
+            ["start","end"].forEach(side=>{
+                const px = xScale(p[side]);
+                handleG.append("line").attr("class","phase-handle")
+                    .attr("x1",px).attr("x2",px).attr("y1",-6).attr("y2",H+4)
+                    .call(d3.drag().on("drag",function(event){
+                        let nd=new Date(Math.max(yearStart.getTime(),Math.min(yearEnd.getTime(),xScale.invert(event.x).getTime())));
+                        if (side==="start") nd=new Date(Math.min(nd.getTime(),phases[pi].end.getTime()-MIN_PHASE_MS));
+                        else               nd=new Date(Math.max(nd.getTime(),phases[pi].start.getTime()+MIN_PHASE_MS));
+                        phases[pi][side]=nd;
+                        shadeRedrawers.forEach(fn=>fn());
+                        d3.selectAll(".handle-group").each(function(){
+                            const margin={top:46,right:20,bottom:35,left:44};
+                            const W=1100-margin.left-margin.right;
+                            const H2=118-margin.top-margin.bottom;
+                            const xs2=d3.scaleTime().domain([yearStart,yearEnd]).range([0,W]);
+                            drawHandlesOnG(d3.select(this),xs2,H2);
+                        });
+                        markDirty();
+                    }));
+                handleG.append("polygon").attr("class","handle-grip")
+                    .attr("points",`${px-5},-8 ${px+5},-8 ${px},0`);
+            });
+        });
+    };
+
+    // ================================================================
+    //  SECTION 01-02 & 03
+    // ================================================================
+    const drawSubplot = (container,data,xDomain,colorScale,title,groupKey,regKey,phaseIdx,typeForDash) => {
+        const m={top:25,right:15,bottom:25,left:35};
+        const w=300-m.left-m.right, h=200-m.top-m.bottom;
+        const svg=container.append("svg").attr("width",w+m.left+m.right).attr("height",h+m.top+m.bottom)
+            .append("g").attr("transform",`translate(${m.left},${m.top})`);
+
+        svg.append("text").attr("x",w/2).attr("y",-10).attr("text-anchor","middle")
+            .style("font-family","'IBM Plex Mono',monospace").style("font-size","10px").style("fill","var(--text-dim)").text(title);
+
+        const xS=d3.scaleTime().domain(xDomain).range([0,w]);
+        const yS=d3.scaleLinear().domain([0,1]).range([h,0]);
+        svg.append("g").attr("class","axis").attr("transform",`translate(0,${h})`)
+            .call(d3.axisBottom(xS).ticks(3).tickFormat(d3.timeFormat("%b %d")))
+            .call(g=>g.select(".domain").attr("stroke","var(--border)"));
+        svg.append("g").attr("class","axis")
+            .call(d3.axisLeft(yS).ticks(3))
+            .call(g=>g.select(".domain").attr("stroke","var(--border)"));
+
+        events.filter(e=>e.date>=xDomain[0]&&e.date<=xDomain[1]).forEach(e=>{
+            const x=xS(e.date);
+            svg.append("line").attr("class","event-line").attr("x1",x).attr("x2",x).attr("y1",0).attr("y2",h);
+            svg.append("circle").attr("cx",x).attr("cy",h).attr("r",2.5)
+                .style("fill","var(--accent2)").style("opacity",0.5).style("pointer-events","none");
+            svg.append("line").attr("class","event-hotspot").attr("x1",x).attr("x2",x).attr("y1",0).attr("y2",h)
+                .on("mouseover",ev=>showTooltip(`<strong>Event</strong><br/>${e.desc}<br/><em>${e.date.toDateString()}</em>`,ev))
+                .on("mouseout",hideTooltip);
+        });
+
+        const lineGen=d3.line().x(d=>xS(d.date)).y(d=>yS(d.normVal)).curve(d3.curveMonotoneX);
+        const grouped=d3.group(data,d=>d[groupKey]);
+        if (regKey!==undefined) registerSubplot(regKey,svg,xS,yS,phaseIdx,groupKey,data);
+
+        grouped.forEach((pts,key)=>{
+            // typeForDash: if we're in the "type" grouping, key IS the type; else use typeForDash if provided
+            const dashType = groupKey==="type" ? key : (typeForDash || null);
+            const path = svg.append("path").datum(pts).attr("class","line").attr("stroke",colorScale(key)).attr("d",lineGen);
+            if (dashType) applyLineStyle(path, dashType);
+            const origDash = dashType ? (lineStyles[dashType]?.dasharray||null) : null;
+            registerAnimPath(path.node(), origDash);
+            path.on("mousemove",function(event){
+                    const [mx]=d3.pointer(event), hd=xS.invert(mx);
+                    const cl=pts.reduce((b,d)=>Math.abs(d.date-hd)<Math.abs(b.date-hd)?d:b,pts[0]);
+                    showTooltip(`<strong>${key}</strong><br/>${d3.timeFormat("%b %d")(cl.date)}<br/>Normalized: ${cl.normVal.toFixed(2)}`,event);
+                    crossHighlightDate(hd,regKey,phaseIdx);
+                })
+                .on("mouseleave",()=>{hideTooltip();clearCrossDots();});
+        });
+    };
+
+    const buildSection12 = () => {
+        const c=d3.select("#req12-charts"); c.html(""); subplotRegistry.clear();
+        countries.forEach(country=>{
+            const row=c.append("div").style("margin-bottom","16px");
+            // Flag in header
+            const h3=row.append("h3").style("display","flex").style("align-items","center").style("gap","6px");
+            h3.append("span").attr("class","country-flag").text(countryFlags[country]||"");
+            h3.append("span").text(country);
+
+            const lr=row.append("div").attr("class","phase-section-legend");
+            types.forEach(t=>lr.append("div").attr("class","legend-item")
+                .html(`<div class="legend-swatch-line">${legendSwatchSVG(typeColors[t],t)}</div><span>${t}</span>`));
+            renderedPhases.forEach((p,i)=>{
+                const wrap=row.append("div").attr("class","phase-group");
+                drawSubplot(wrap,phasedData.filter(d=>d.country===country&&d.phaseIdx===i),
+                    [p.start,p.end],d=>typeColors[d],p.shortName,"type",`${country}__type__${i}`,i);
+            });
+        });
+    };
+
+    const buildSection3 = () => {
+        const c=d3.select("#req3-charts"); c.html("");
+        types.forEach(t=>{
+            const row=c.append("div").style("margin-bottom","16px");
+            row.append("h3").text(`${t} Behavior Across Languages`);
+            const lr=row.append("div").attr("class","phase-section-legend");
+            countries.forEach(cn=>lr.append("div").attr("class","legend-item")
+                .html(`<span class="country-flag" style="font-size:16px;">${countryFlags[cn]||""}</span><div style="width:16px;height:2px;background:${countryColors(cn)};border-radius:1px;display:inline-block;margin:0 4px;vertical-align:middle;"></div><span>${cn}</span>`));
+            renderedPhases.forEach((p,i)=>{
+                const wrap=row.append("div").attr("class","phase-group");
+                drawSubplot(wrap,phasedData.filter(d=>d.type===t&&d.phaseIdx===i),
+                    [p.start,p.end],countryColors,p.shortName,"country",`${t}__country__${i}`,i,t);
+            });
+        });
+    };
+
+    // ================================================================
+    //  SECTION 04 NEW — Differential: Search minus View / Edit / Global
+    // ================================================================
+    const buildSection05 = () => {
+        const container = d3.select("#req5-charts");
+        container.html("");
+
+        const margin = {top:40, right:20, bottom:40, left:52};
+        const W = 1060 - margin.left - margin.right;
+        const H = 220 - margin.top - margin.bottom;
+        const xScale = d3.scaleTime().domain([yearStart, yearEnd]).range([0,W]);
+
+        // 3 diff charts:
+        const diffSeries = [
+            {
+                label: "Search − View (per country)",
+                subtitle: "Positive = search outpaces page views",
+                fn: (c) => {
+                    const search = allData.filter(d=>d.country===c&&d.type==="Search"&&d.date>=yearStart&&d.date<=yearEnd);
+                    const view   = allData.filter(d=>d.country===c&&d.type==="View"  &&d.date>=yearStart&&d.date<=yearEnd);
+                    return computeDiff(search, view);
+                },
+                countries: countries.filter(c=>c!=="Worldwide")
+            },
+            {
+                label: "Search − Edit (per country)",
+                subtitle: "Positive = search outpaces edits",
+                fn: (c) => {
+                    const search = allData.filter(d=>d.country===c&&d.type==="Search"&&d.date>=yearStart&&d.date<=yearEnd);
+                    const edit   = allData.filter(d=>d.country===c&&d.type==="Edit"  &&d.date>=yearStart&&d.date<=yearEnd);
+                    return computeDiff(search, edit);
+                },
+                countries: countries.filter(c=>c!=="Worldwide")
+            },
+            {
+                label: "Country Search − Worldwide Search",
+                subtitle: "Positive = country-specific interest exceeds global baseline",
+                fn: (c) => {
+                    const search   = allData.filter(d=>d.country===c           &&d.type==="Search"&&d.date>=yearStart&&d.date<=yearEnd);
+                    const worldwid = allData.filter(d=>d.country==="Worldwide" &&d.type==="Search"&&d.date>=yearStart&&d.date<=yearEnd);
+                    return computeDiff(search, worldwid);
+                },
+                countries: countries.filter(c=>c!=="Worldwide")
+            }
+        ];
+
+        diffSeries.forEach(ds => {
+            const block = container.append("div").style("margin-bottom","32px");
+            block.append("h3").text(ds.label);
+            block.append("div").style("font-family","'IBM Plex Mono',monospace")
+                .style("font-size","9px").style("color","var(--text-dim)").style("margin-bottom","10px").text(ds.subtitle);
+
+            // legend
+            const lr = block.append("div").attr("class","legend");
+            ds.countries.forEach(cn => {
+                lr.append("div").attr("class","legend-item")
+                    .html(`<span class="country-flag" style="font-size:16px;">${countryFlags[cn]||""}</span><div style="width:16px;height:2px;background:${countryColors(cn)};border-radius:1px;display:inline-block;margin:0 4px;vertical-align:middle;"></div><span>${cn}</span>`);
+            });
+
+            const svg = block.append("svg")
+                .attr("width", W+margin.left+margin.right)
+                .attr("height", H+margin.top+margin.bottom);
+            const g = svg.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+
+            // compute all series first to get y domain
+            const allSeries = ds.countries.map(cn => ({ country: cn, pts: ds.fn(cn) })).filter(s=>s.pts.length>0);
+            const allVals = allSeries.flatMap(s=>s.pts.map(d=>d.diff));
+            const yExt = d3.extent(allVals);
+            const yPad = (yExt[1]-yExt[0])*0.1 || 0.1;
+            const yScale = d3.scaleLinear().domain([yExt[0]-yPad, yExt[1]+yPad]).range([H,0]);
+
+            // zero line
+            g.append("line")
+                .attr("x1",0).attr("x2",W)
+                .attr("y1",yScale(0)).attr("y2",yScale(0))
+                .attr("stroke","var(--border)").attr("stroke-width",1).attr("stroke-dasharray","4,4");
+
+            // phase shades
+            renderedPhases.forEach(p=>{
+                const x0=xScale(p.start), x1=xScale(p.end);
+                g.append("rect").attr("class","phase-shade")
+                    .attr("x",x0).attr("y",0).attr("width",Math.max(0,x1-x0)).attr("height",H);
+                g.append("text").attr("class","phase-label")
+                    .attr("x",(x0+x1)/2).attr("y",-8).attr("text-anchor","middle").text(p.shortName);
+            });
+
+            // axes
+            g.append("g").attr("class","axis").attr("transform",`translate(0,${H})`)
+                .call(d3.axisBottom(xScale).ticks(d3.timeMonth.every(1)).tickFormat(d3.timeFormat("%b")))
+                .call(gg=>gg.select(".domain").remove());
+            g.append("g").attr("class","axis")
+                .call(d3.axisLeft(yScale).ticks(5).tickFormat(d=>d.toFixed(2)))
+                .call(gg=>gg.select(".domain").remove());
+            g.append("text").attr("x",-H/2).attr("y",-40).attr("transform","rotate(-90)")
+                .attr("text-anchor","middle").style("font-size","8px").style("fill","var(--text-dim)")
+                .style("font-family","'IBM Plex Mono',monospace").text("Δ normalized");
+
+            // events
+            events.filter(e=>e.date>=yearStart&&e.date<=yearEnd).forEach(e=>{
+                const x=xScale(e.date);
+                g.append("line").attr("class","event-line").attr("x1",x).attr("x2",x).attr("y1",0).attr("y2",H);
+                g.append("line").attr("class","event-hotspot").attr("x1",x).attr("x2",x).attr("y1",0).attr("y2",H)
+                    .on("mouseover",ev=>showTooltip(`<strong>Event</strong><br/>${e.desc}<br/><em>${e.date.toDateString()}</em>`,ev))
+                    .on("mouseout",hideTooltip);
+            });
+
+            // lines
+            const lineGen = d3.line().defined(d=>!isNaN(d.diff))
+                .x(d=>xScale(d.date)).y(d=>yScale(d.diff)).curve(d3.curveMonotoneX);
+            allSeries.forEach(({country, pts}) => {
+                const path = g.append("path").datum(pts).attr("class","line line-diff")
+                    .attr("stroke", countryColors(country)).attr("d", lineGen);
+                registerAnimPath(path.node(), null);
+                path.on("mousemove",function(event){
+                        const [mx]=d3.pointer(event);
+                        const hd=xScale.invert(mx);
+                        const cl=pts.reduce((b,d)=>Math.abs(d.date-hd)<Math.abs(b.date-hd)?d:b,pts[0]);
+                        showTooltip(`<strong>${country} — ${ds.label}</strong><br/>${d3.timeFormat("%b %d")(cl.date)}<br/>Δ: ${cl.diff.toFixed(3)}`,event);
+                    }).on("mouseleave",hideTooltip);
+            });
+        });
+    };
+
+    // helper: align two time-series by date and compute normalized difference
+    function computeDiff(seriesA, seriesB) {
+        if (!seriesA.length || !seriesB.length) return [];
+        const nA = normalize(seriesA);
+        const nB = normalize(seriesB);
+        const mapB = new Map(nB.map(d=>[d.date.getTime(), d.normVal]));
+        return nA.map(d => {
+            const bv = mapB.get(d.date.getTime());
+            return bv !== undefined ? { date: d.date, diff: d.normVal - bv } : null;
+        }).filter(Boolean);
+    }
+
+    // ================================================================
+    //  SECTION 05 — Heatmap + Dendrogram
+    // ================================================================
+    const genMetricBlock = (metricType, activeCountries) => {
+        const panelId=`panel-${metricType}`;
+        const block=d3.select("#req4-charts").append("div").attr("class","metric-analysis-block");
+        block.append("h3").text(`${metricType} — Similarity & Clustering`);
+
+        const metricDates=Array.from(new Set(phasedData.filter(d=>d.type===metricType).map(d=>d.date.getTime()))).sort();
+        const vectors={};
+        activeCountries.forEach(cn=>{
+            const sub=phasedData.filter(d=>d.country===cn&&d.type===metricType);
+            const lk=new Map(sub.map(d=>[d.date.getTime(),d.normVal]));
+            vectors[cn]=metricDates.map(dk=>lk.get(dk)||0);
+        });
+
+        const dist=computeDistMatrix(vectors,activeCountries);
+        const root=d3.hierarchy(UPGMA(activeCountries,dist,metricType));
+        const leafOrder=root.leaves().map(d=>d.data.id);
+        const hmSize=360,dendroW=130,labelSpace=90;
+
+        const rowDiv=block.append("div").attr("class","metric-row");
+        const leftDiv=rowDiv.append("div");
+        const panelDiv=rowDiv.append("div").attr("class","dendro-panel").attr("id",panelId);
+        panelDiv.append("div").attr("class","dendro-panel-header").text("Cluster Detail");
+        panelDiv.append("div").attr("class","dendro-panel-empty").html("Hover a node<br/>on the dendrogram<br/>to compare countries");
+
+        const svg=leftDiv.append("svg")
+            .attr("width",hmSize+dendroW+labelSpace+80)
+            .attr("height",hmSize+100);
+        const gHm=svg.append("g").attr("transform","translate(60,80)");
+        const gD=svg.append("g").attr("transform",`translate(${hmSize+60+labelSpace},80)`);
+
+        const grid=d3.scaleBand().domain(leafOrder).range([0,hmSize]).padding(0.02);
+        const maxDist = currentAlgo==="pearson" ? 2
+            : Math.max(...activeCountries.flatMap(c1=>activeCountries.map(c2=>dist[c1][c2])));
+        const colorHm=d3.scaleSequential(d3.interpolateRdYlBu).domain([maxDist,0]);
+
+        leafOrder.forEach(r=>{
+            leafOrder.forEach(c=>{
+                const dv=dist[r][c];
+                const tipVal = currentAlgo==="pearson"
+                    ? `r = ${(1-dv).toFixed(3)}`
+                    : `DTW = ${dv.toFixed(4)}`;
+                gHm.append("rect")
+                    .attr("class",`cell cell-${metricType} cell-${metricType}-${r.replace(/\s+/g,"")}`)
+                    .attr("x",grid(c)).attr("y",grid(r))
+                    .attr("width",grid.bandwidth()).attr("height",grid.bandwidth())
+                    .attr("fill",colorHm(dv))
+                    .on("mouseover",e=>showTooltip(`<strong>${metricType}</strong><br/>${r} & ${c}<br/>${tipVal}`,e))
+                    .on("mouseout",hideTooltip);
+            });
+            // flag + label for rows
+            const flagStr = countryFlags[r] || "";
+            gHm.append("text").attr("x",hmSize+8).attr("y",grid(r)+grid.bandwidth()/2+4)
+                .style("font-family","'IBM Plex Mono',monospace").style("font-weight","600")
+                .style("font-size","10px").style("fill","var(--text)").text(flagStr+" "+r);
+            gHm.append("text").attr("x",grid(r)+grid.bandwidth()/2).attr("y",-8)
+                .attr("text-anchor","start")
+                .attr("transform",`rotate(-40,${grid(r)+grid.bandwidth()/2},-8)`)
+                .style("font-family","'IBM Plex Mono',monospace").style("font-size","9px")
+                .style("fill","var(--text-dim)").text(r);
+        });
+
+        const defs=svg.append("defs");
+        const gid=`grad-${metricType}-${currentAlgo}`;
+        const grad=defs.append("linearGradient").attr("id",gid).attr("x1","0%").attr("x2","100%");
+        d3.range(0,1.01,0.1).forEach(t=>grad.append("stop").attr("offset",`${t*100}%`).attr("stop-color",colorHm(t*maxDist)));
+        gHm.append("rect").attr("x",0).attr("y",hmSize+12).attr("width",hmSize).attr("height",8)
+            .attr("fill",`url(#${gid})`).attr("rx",2);
+        const [lb0,lb1] = currentAlgo==="pearson"
+            ? ["r = 1 (identical)","r = −1 (inverse)"]
+            : ["dist = 0 (identical)", `dist = ${maxDist.toFixed(3)} (max)`];
+        gHm.append("text").attr("x",0).attr("y",hmSize+28).style("font-size","9px")
+            .style("fill","var(--text-dim)").style("font-family","'IBM Plex Mono',monospace").text(lb0);
+        gHm.append("text").attr("x",hmSize).attr("y",hmSize+28).attr("text-anchor","end")
+            .style("font-size","9px").style("fill","var(--text-dim)").style("font-family","'IBM Plex Mono',monospace").text(lb1);
+
+        const cl2=d3.cluster().size([hmSize,dendroW]);
+        cl2(root); root.each(d=>{d.y=dendroW-d.y;});
+        const lkGen=d3.linkHorizontal().x(d=>d.y).y(d=>d.x);
+        const links=gD.selectAll(".dendro-link").data(root.links()).enter()
+            .append("path").attr("class","dendro-link").attr("d",lkGen);
+
+        gD.selectAll(".dendro-node").data(root.descendants()).enter()
+            .append("g").attr("class","dendro-node")
+            .attr("transform",d=>`translate(${d.y},${d.x})`)
+            .append("circle").attr("r",4)
+            .attr("fill",d=>d.children?"var(--surface2)":"var(--surface)")
+            .attr("stroke",d=>d.children?"var(--text-dim)":countryColors(d.data.id))
+            .style("cursor","pointer")
+            .on("mouseover",function(event,d){
+                const ids=d.leaves().map(l=>l.data.id.replace(/\s+/g,""));
+                const names=d.leaves().map(l=>l.data.id);
+                links.style("stroke",l=>d.descendants().includes(l.target)?"var(--accent)":"var(--border)")
+                     .style("stroke-width",l=>d.descendants().includes(l.target)?"2.5px":"1.5px");
+                d3.selectAll(`.cell-${metricType}`).style("opacity",0.08);
+                ids.forEach(id=>d3.selectAll(`.cell-${metricType}-${id}`).style("opacity",1));
+                showTooltip(`<strong>${metricType} Cluster</strong><br/>${names.join(", ")}`,event);
+                updateClusterPanel(panelId,metricType,names);
+            })
+            .on("mouseout",function(){
+                links.style("stroke","var(--border)").style("stroke-width","1.5px");
+                d3.selectAll(`.cell-${metricType}`).style("opacity",1);
+                hideTooltip();
+            });
+    };
+
+    const buildSection04 = () => {
+        d3.select("#req4-charts").html("");
+        types.forEach((type,i)=>{
+            const active=i>0?countries.filter(c=>c.toLowerCase()!=="worldwide"):countries;
+            genMetricBlock(type,active);
+        });
+    };
+
+    const updateClusterPanel = (panelId,metricType,leafNames) => {
+        const panel=d3.select(`#${panelId}`);
+        panel.selectAll(".dendro-panel-empty,.panel-content").remove();
+        const content=panel.append("div").attr("class","panel-content");
+
+        const tagRow=content.append("div").style("display","flex").style("flex-wrap","wrap").style("gap","6px").style("margin-bottom","14px");
+        leafNames.forEach(n=>tagRow.append("span")
+            .style("background",countryColors(n)+"22").style("border",`1px solid ${countryColors(n)}55`)
+            .style("color",countryColors(n)).style("font-family","'IBM Plex Mono',monospace")
+            .style("font-size","10px").style("padding","2px 8px").style("border-radius","2px")
+            .html(`${countryFlags[n]||""} ${n}`));
+
+        const pmW=240,pmH=120,m={top:18,right:8,bottom:22,left:28};
+        const iW=pmW-m.left-m.right, iH=pmH-m.top-m.bottom;
+
+        renderedPhases.forEach((p,pIdx)=>{
+            content.append("div").style("font-family","'IBM Plex Mono',monospace").style("font-size","9px")
+                .style("color","var(--text-dim)").style("text-transform","uppercase")
+                .style("letter-spacing","0.08em").style("margin-bottom","4px")
+                .text(p.shortName+": "+p.name.replace(/^P\d+: /,""));
+
+            const sg=content.append("svg").attr("width",pmW).attr("height",pmH)
+                .style("display","block").style("margin-bottom","10px")
+                .append("g").attr("transform",`translate(${m.left},${m.top})`);
+            const xs=d3.scaleTime().domain([p.start,p.end]).range([0,iW]);
+            const ys=d3.scaleLinear().domain([0,1]).range([iH,0]);
+            sg.append("g").attr("class","axis").attr("transform",`translate(0,${iH})`)
+                .call(d3.axisBottom(xs).ticks(3).tickFormat(d3.timeFormat("%b %d")))
+                .call(gg=>gg.select(".domain").attr("stroke","var(--border)"));
+            sg.append("g").attr("class","axis").call(d3.axisLeft(ys).ticks(2))
+                .call(gg=>gg.select(".domain").attr("stroke","var(--border)"));
+            events.filter(e=>e.date>=p.start&&e.date<=p.end).forEach(e=>{
+                const x=xs(e.date);
+                sg.append("line").attr("class","event-line").attr("x1",x).attr("x2",x).attr("y1",0).attr("y2",iH);
+            });
+            const lg=d3.line().defined(d=>!isNaN(d.normVal)).x(d=>xs(d.date)).y(d=>ys(d.normVal)).curve(d3.curveMonotoneX);
+            leafNames.forEach(cn=>{
+                const sub=phasedData.filter(d=>d.country===cn&&d.type===metricType&&d.phaseIdx===pIdx);
+                if (!sub.length) return;
+                sg.append("path").datum(sub).attr("fill","none").attr("stroke",countryColors(cn))
+                    .attr("stroke-width",1.5).attr("opacity",0.85).attr("d",lg);
+            });
+        });
+        const leg=content.append("div").style("display","flex").style("flex-wrap","wrap").style("gap","8px").style("margin-top","4px");
+        leafNames.forEach(n=>leg.append("div").attr("class","legend-item")
+            .html(`<span style="font-size:12px;">${countryFlags[n]||""}</span><div style="width:16px;height:2px;background:${countryColors(n)};border-radius:1px;display:inline-block;margin:0 4px;vertical-align:middle;"></div><span style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text-dim)">${n}</span>`));
+    };
+
+    // ── rebuild helpers ───────────────────────────────────────────────────
+    const rebuildDownstream = () => {
+        allAnimPaths = [];
+        subplotRegistry.clear();
+        buildSection12();
+        buildSection3();
+        buildSection05();
+        buildSection04();
+        buildOverviewCharts();
+    };
+    const rebuildAll = rebuildDownstream;
+
+    // ── initial render ────────────────────────────────────────────────────
+    buildOverviewCharts();
+    buildSection12();
+    buildSection3();
+    buildSection05();
+    buildSection04();
+
+}).catch(err => {
+    console.error("Loading Error:", err);
+    d3.select("body").append("div")
+        .style("color","var(--accent2)").style("font-family","'IBM Plex Mono',monospace")
+        .style("padding","20px").text("⚠ Data loading error — check console for details.");
+});
+</script>
+</body>
+</html>
