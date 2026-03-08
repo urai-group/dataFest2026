@@ -344,7 +344,7 @@ Promise.all(promises).then(datasets => {
 
     const countries    = trendFiles.map(d=>d.name);
     const types        = ["Search","View","Edit"];
-    const typeColors   = { Search:"#1a7f5a", View:"#1a56db", Edit:"#6d28d9" };
+    const typeColors   = { Search:"#000000", View:"#FE53BB", Edit:"#08F7FE" };
     const countryColors = d3.scaleOrdinal().domain(countries)
         .range(["#1a56db","#b45309","#1a7f5a","#e53e3e","#6d28d9"]);
 
